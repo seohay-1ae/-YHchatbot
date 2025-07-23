@@ -1,0 +1,12 @@
+flask==3.0.0
+python-dotenv==1.0.0
+openai==1.97.0
+langchain==0.3.26
+langchain-openai==0.2.8
+langchain-community==0.3.26
+tavily-python==0.7.10
+pymongo==4.13.2
+requests==2.32.4
+pytz==2025.2
+tiktoken==0.9.0
+oracledb==2.0.1 
