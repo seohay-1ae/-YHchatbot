@@ -241,7 +241,12 @@ def chat():
         elif category == "product":
             result = handle_product(user_message)
         elif category == "price":
-            result = handle_price(user_message)
+            # 대화 히스토리를 price 핸들러에 전달
+            conversation_history = []
+            for user_msg, bot_msg in history:
+                conversation_history.append({"role": "user", "content": user_msg})
+                conversation_history.append({"role": "assistant", "content": bot_msg})
+            result = handle_price(user_message, conversation_history)
         elif category == "faq":
             result = handle_faq(user_message)
         elif category == "search":

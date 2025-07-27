@@ -113,7 +113,7 @@ def extract_date_phrases(text):
     candidates = [c.strip() for c in candidates if c.strip() and len(c.strip()) > 1]
     return candidates
 
-def parse_price_query(user_message):
+def parse_price_query(user_message, conversation_history=None):
     today = datetime.now().strftime('%Y%m%d')
     
     # 사용자 메시지에서 직접 품목 찾기 (LLM 의존성 제거)
@@ -156,6 +156,21 @@ def parse_price_query(user_message):
                     break
             if product:
                 break
+    
+    # 5. 대화 맥락에서 품목 찾기 (새로 추가)
+    if not product and conversation_history:
+        # 이전 대화에서 언급된 품목 찾기
+        for prev_message in reversed(conversation_history):
+            if isinstance(prev_message, dict) and prev_message.get('role') == 'user':
+                prev_text = prev_message.get('content', '')
+                # 이전 메시지에서 품목 찾기
+                for p in PRODUCT_KEYWORDS:
+                    if p in prev_text:
+                        product = p
+                        break
+                if product:
+                    break
+    
     # 날짜 후보 추출
     date_candidates = extract_date_phrases(user_message)
     print(f"[DEBUG] 추출된 날짜 후보: {date_candidates}")
@@ -174,8 +189,8 @@ def parse_price_query(user_message):
     compare = (date1 != date2)
     return product, date1, date2, compare
 
-def handle_price(user_message):
-    result = parse_price_query(user_message)
+def handle_price(user_message, conversation_history=None):
+    result = parse_price_query(user_message, conversation_history)
     # 구버전 fallback 호환
     if len(result) == 3:
         product, date, compare = result
