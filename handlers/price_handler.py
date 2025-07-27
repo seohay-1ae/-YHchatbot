@@ -68,7 +68,7 @@ def test_oracle_connection():
         dsn="116.36.205.25:1521/XEPDB1" 
     )
     cur = conn.cursor()
-    cur.execute("SELECT * FROM TB_PRICE_API_HISTORY")  # 실제 테이블명 사용
+    cur.execute("SELECT * FROM TB_PRICE_API_HISTORY")  
     rows = cur.fetchall()
     for row in rows:
         print(row)
