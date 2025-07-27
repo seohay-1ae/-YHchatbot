@@ -24,6 +24,12 @@ def extract_keywords(user_message):
 def handle_search(user_message):
     try:
         tavily_api_key = os.getenv("TAVILY_API_KEY")
+        
+        # API 키 검증
+        if not tavily_api_key:
+            print("[DEBUG] Tavily API 키가 설정되지 않음")
+            return {"response": "검색 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해주세요.", "type": "search"}
+        
         tavily_url = "https://api.tavily.com/search"
         headers = {"Content-Type": "application/json"}
         user_keywords = extract_keywords(user_message)
@@ -31,7 +37,8 @@ def handle_search(user_message):
         seen_urls = set()
         tries = 0
         max_results_needed = 3
-        max_tries = 5
+        max_tries = 3  # 5에서 3으로 줄임
+        
         while len(filtered_results) < max_results_needed and tries < max_tries:
             payload = {
                 "api_key": tavily_api_key,
@@ -41,9 +48,43 @@ def handle_search(user_message):
                 "include_raw_content": False,
                 "max_results": max_results_needed * 2  # 한 번에 여러 개 요청
             }
-            tavily_resp = requests.post(tavily_url, headers=headers, data=json.dumps(payload))
-            tavily_data = tavily_resp.json()
+            
+            print(f"[DEBUG] Tavily API 요청 시작 (시도 {tries + 1}): {user_message}")
+            tavily_resp = requests.post(tavily_url, headers=headers, data=json.dumps(payload), timeout=60)
+            
+            print(f"[DEBUG] Tavily API 응답 상태 코드: {tavily_resp.status_code}")
+            
+            # HTTP 상태 코드 확인
+            if tavily_resp.status_code != 200:
+                print(f"[DEBUG] Tavily API HTTP 오류: {tavily_resp.status_code}")
+                print(f"[DEBUG] 오류 응답 내용: {tavily_resp.text[:500]}")
+                tries += 1
+                continue
+            
+            # 응답 내용 확인
+            response_text = tavily_resp.text.strip()
+            if not response_text:
+                print("[DEBUG] Tavily API 응답이 비어있음")
+                tries += 1
+                continue
+            
+            # JSON 파싱 시도
+            try:
+                tavily_data = tavily_resp.json()
+            except json.JSONDecodeError as e:
+                print(f"[DEBUG] Tavily API JSON 파싱 오류: {e}")
+                print(f"[DEBUG] 응답 내용: {response_text[:500]}")
+                tries += 1
+                continue
+            
             observations = tavily_data.get("results", [])
+            print(f"[DEBUG] 검색 결과 수: {len(observations)}")
+            
+            if not observations:
+                print("[DEBUG] Tavily API 검색 결과 없음")
+                tries += 1
+                continue
+            
             for obs in observations:
                 url = obs.get("url", "")
                 if url in seen_urls:
@@ -75,11 +116,16 @@ def handle_search(user_message):
                 if len(filtered_results) == max_results_needed:
                     break
             tries += 1
+        
         obs_answer = ""
         for i, (title, summary, url) in enumerate(filtered_results):
             obs_answer += f"{i+1}. [{title}] {summary}\n출처: <a href='{url}' target='_blank'>{url}</a>\n\n"
         obs_answer = obs_answer.strip() if obs_answer else "관련 정보가 검색되지 않았습니다."
         return {"response": obs_answer, "type": "search"}
+        
+    except requests.exceptions.RequestException as e:
+        print(f"[DEBUG] Tavily API 요청 오류: {e}")
+        return {"response": "검색 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해주세요.", "type": "search"}
     except Exception as e:
-        print(f"[DEBUG] Tavily API 파싱 오류: {e}")
+        print(f"[DEBUG] Tavily API 기타 오류: {e}")
         return {"response": "관련 정보가 검색되지 않았습니다.", "type": "search"} 
