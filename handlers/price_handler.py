@@ -115,35 +115,47 @@ def extract_date_phrases(text):
 
 def parse_price_query(user_message):
     today = datetime.now().strftime('%Y%m%d')
-    # 품목명 추출 (LLM 사용)
-    prompt = f"""
-아래 사용자의 질문에서
-1. 품목명(정확히)
-만 추출해서 JSON만, 코드블록 없이, 아무 설명도 없이, 한 줄로 답해줘.
-예시: {{"product": "쌀"}}
-질문: "{user_message}"
-"""
-    try:
-        completion = client.chat.completions.create(
-            model="gpt-4o-2024-05-13",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=50,
-            temperature=0
-        )
-        import json
-        content = completion.choices[0].message.content.strip()
-        if not content.startswith('{'):
-            raise ValueError("LLM 응답이 JSON이 아님")
-        data = json.loads(content)
-        # 품목명은 PRODUCT_KEYWORDS 중 가장 유사한 것으로 매칭
-        product = None
+    
+    # 사용자 메시지에서 직접 품목 찾기 (LLM 의존성 제거)
+    product = None
+    message_no_space = user_message.replace(' ', '')
+    
+    # 1. 공백 제거된 메시지에서 정확히 일치하는 품목 찾기
+    for p in PRODUCT_KEYWORDS:
+        if p == message_no_space:
+            product = p
+            break
+    
+    # 2. 원본 메시지에서 정확히 일치하는 품목 찾기
+    if not product:
         for p in PRODUCT_KEYWORDS:
-            if p in data.get("product", ""):
+            if p == user_message:
                 product = p
                 break
-    except Exception as e:
-        print(f"[DEBUG] LLM 파싱 오류: {e}")
-        product = next((p for p in PRODUCT_KEYWORDS if p in user_message), None)
+    
+    # 3. 공백 제거된 메시지에서 정확히 일치하는 품목 찾기 (방울 토마토 → 방울토마토)
+    if not product:
+        # 가장 긴 품목부터 매칭하여 정확한 품목 우선 선택
+        sorted_products = sorted(PRODUCT_KEYWORDS, key=len, reverse=True)
+        for p in sorted_products:
+            if p in message_no_space:
+                # 특별한 경우 처리: 옥수수와 수수 구분
+                if p == "수수" and "옥수수" in message_no_space:
+                    continue  # 옥수수가 있으면 수수는 건너뛰기
+                product = p
+                break
+    
+    # 4. 한글 단어들을 추출해서 정확히 일치하는 품목 찾기
+    if not product:
+        import re
+        korean_words = re.findall(r'[가-힣]+', user_message)
+        for word in korean_words:
+            for p in PRODUCT_KEYWORDS:
+                if p == word:
+                    product = p
+                    break
+            if product:
+                break
     # 날짜 후보 추출
     date_candidates = extract_date_phrases(user_message)
     print(f"[DEBUG] 추출된 날짜 후보: {date_candidates}")
@@ -178,20 +190,64 @@ def handle_price(user_message):
         }
     if not product:
         import re
-        match = re.findall(r'[가-힣]+', user_message)
-        not_found = match[0] if match else user_message
-        # 부분 일치 품목 찾기
-        related = [p for p in PRODUCT_KEYWORDS if not_found in p]
-        product_list_str = ', '.join(PRODUCT_KEYWORDS)
-        if related:
-            related_str = ', '.join(related)
-            return {
-                "response": f"{not_found}는 사이트에서 취급하지 않지만, 관련 품목은 다음과 같습니다:\n{related_str}",
-                "type": "price"
+        # 사용자 메시지에서 한글 단어들을 추출
+        korean_words = re.findall(r'[가-힣]+', user_message)
+        
+        # 공백을 제거한 전체 메시지도 확인
+        full_message_no_space = user_message.replace(' ', '')
+        
+        # 1. 먼저 공백 제거된 전체 메시지로 정확히 매칭되는 품목 찾기
+        for p in PRODUCT_KEYWORDS:
+            if p == full_message_no_space:
+                product = p
+                break
+        
+        # 2. 공백 제거된 메시지에서 정확히 일치하는 품목 찾기 (방울 토마토 → 방울토마토)
+        if not product:
+            # 가장 긴 품목부터 매칭하여 정확한 품목 우선 선택
+            sorted_products = sorted(PRODUCT_KEYWORDS, key=len, reverse=True)
+            for p in sorted_products:
+                if p in full_message_no_space:
+                    # 특별한 경우 처리: 옥수수와 수수 구분
+                    if p == "수수" and "옥수수" in full_message_no_space:
+                        continue  # 옥수수가 있으면 수수는 건너뛰기
+                    product = p
+                    break
+        
+        # 3. 여전히 찾지 못했다면 개별 단어로 매칭 시도
+        if not product:
+            for word in korean_words:
+                for p in PRODUCT_KEYWORDS:
+                    if p == word:
+                        product = p
+                        break
+                if product:
+                    break
+        
+        # 3. 여전히 찾지 못했다면 취급하지 않는 품목으로 처리
+        if not product:
+            not_found = korean_words[0] if korean_words else user_message
+            
+            # 상품을 카테고리별로 분류
+            categories = {
+                "식량작물": ["쌀","찹쌀","혼합곡","기장","콩","팥","녹두","메밀","고구마","감자","귀리","보리","수수","율무"],
+                "채소류": ["배추","양배추","시금치","상추","얼갈이배추","갓","연근","우엉","수박","참외","오이","호박","토마토","딸기","무","당근","열무","건고추","풋고추","붉은고추","피마늘","양파","파","생강","고춧가루","가지","미나리","깻잎","부추","피망","파프리카","멜론","깐마늘(국산)","깐마늘(수입)","브로콜리","양상추","청경채","케일","콩나물","절임배추","쑥","달래","두릅","로메인 상추","취나물","쥬키니호박","청양고추","대파","고사리","쪽파","다발무","겨울 배추","알배기배추","방울토마토"],
+                "특용작물": ["참깨","들깨","땅콩","느타리버섯","팽이버섯","새송이버섯","호두","아몬드","양송이버섯","표고버섯","더덕"],
+                "과일류": ["바나나","참다래","파인애플","오렌지","자몽","레몬","체리","건포도","건블루베리","망고","블루베리","아보카도","레드향","매실","무화과","복분자","샤인머스켓","곶감","골드키위","사과","배","복숭아","포도","감귤","단감"]
             }
-        else:
+            
+            response = f"{not_found}는 사이트에서 취급하지 않습니다.\n저희 사이트에서 취급하는 주요 상품 목록입니다:\n\n"
+            
+            for category, items in categories.items():
+                response += f"📦 {category} ({len(items)}종)\n"
+                response += f"   {', '.join(items)}"
+                response += "\n\n"
+            
+            response += f"총 {len(PRODUCT_KEYWORDS)}가지의 농산물을 취급하고 있습니다.\n"
+            response += "특정 상품에 대한 자세한 정보가 필요하시면 언제든 말씀해 주세요!"
+            
             return {
-                "response": f"{not_found}는 사이트에서 취급하지 않습니다.\n저희 사이트에서 취급하는 품목은 다음과 같습니다:\n{product_list_str}",
+                "response": response,
                 "type": "price"
             }
     # 날짜 비교 로직 개선
