@@ -1,2 +1,0 @@
-from handlers.price_handler import test_oracle_connection
-test_oracle_connection()

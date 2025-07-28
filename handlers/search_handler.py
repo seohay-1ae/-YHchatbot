@@ -36,8 +36,8 @@ def handle_search(user_message):
         filtered_results = []
         seen_urls = set()
         tries = 0
-        max_results_needed = 3
-        max_tries = 3  # 5에서 3으로 줄임
+        max_results_needed = 3 # 검색 결과 개수 설정
+        max_tries = 5  # 검색 시도 횟수
         
         while len(filtered_results) < max_results_needed and tries < max_tries:
             payload = {
@@ -46,7 +46,7 @@ def handle_search(user_message):
                 "search_depth": "advanced",
                 "include_answer": False,
                 "include_raw_content": False,
-                "max_results": max_results_needed * 2  # 한 번에 여러 개 요청
+                "max_results": max_results_needed * 2 
             }
             
             print(f"[DEBUG] Tavily API 요청 시작 (시도 {tries + 1}): {user_message}")
