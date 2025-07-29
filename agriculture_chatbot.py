@@ -43,13 +43,18 @@ def save_chat_log(user_id, user_message, bot_message):
         print(f"[MongoDB 저장 오류] {e}")
 
 # OpenAI 클라이언트 설정
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    print("[경고] OPENAI_API_KEY가 설정되지 않았습니다. 환경 변수를 확인해주세요.")
+    print("예: .env 파일에 OPENAI_API_KEY=sk-your-key-here 추가")
+
+client = OpenAI(api_key=openai_api_key)
 
 # LangChain 설정
 llm = ChatOpenAI(
     model="gpt-4o-mini",
     temperature=0.7,
-    openai_api_key=os.getenv("OPENAI_API_KEY")
+    openai_api_key=openai_api_key
 )
 
 # Tavily 검색 도구 설정
